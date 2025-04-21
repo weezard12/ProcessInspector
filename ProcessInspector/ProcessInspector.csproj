@@ -11,8 +11,9 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.VisualBasic" Version="4.13.0" />
     <PackageReference Include="Microsoft.ML" Version="4.0.2" />
-    <PackageReference Include="PeNet" Version="5.0.0" />
-    <PackageReference Include="Spectre.Console" Version="0.50.0" />
+    <PackageReference Include="PeNet" Version="2.9.7" />
+    <PackageReference Include="Spectre.Console" Version="0.45.0" />
+    <PackageReference Include="System.Management" Version="7.0.2" />
   </ItemGroup>
 
 </Project>

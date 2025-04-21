@@ -1,4 +1,5 @@
-﻿using ProcessInspector.Types;
+﻿using ProcessInspector.EngineDetectors;
+using ProcessInspector.Types;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,12 +11,15 @@ namespace ProcessInspector
 {
     public class ProcessAnalyzer : IProcessAnalyzer
     {
-        private readonly IEngineDetector _engineDetector;
+        private readonly EngineDetectorManager _engineDetectorManager;
         private readonly ILanguageDetector _languageDetector;
 
         public ProcessAnalyzer(IEngineDetector engineDetector, ILanguageDetector languageDetector)
         {
-            _engineDetector = engineDetector;
+            // If the provided engine detector is already a manager, use it,
+            // otherwise create a new manager
+            _engineDetectorManager = engineDetector as EngineDetectorManager 
+                ?? new EngineDetectorManager();
             _languageDetector = languageDetector;
         }
 
@@ -55,12 +59,14 @@ namespace ProcessInspector
                 MemoryUsage = $"{Math.Round(process.UnderlyingProcess.WorkingSet64 / 1024.0 / 1024.0, 2)} MB",
                 StartTime = process.UnderlyingProcess.StartTime.ToString(),
                 ThreadCount = process.UnderlyingProcess.Threads.Count,
-                DetectedEngine = _engineDetector.DetectEngine(process.MainModulePath)
+                DetectedEngine = _engineDetectorManager.DetectEngine(process.MainModulePath)
             };
 
-            // Get additional details from version info
+            // Get engine probabilities and add them to the process details
             if (process.MainModulePath != null && File.Exists(process.MainModulePath))
             {
+                details.EngineProbabilities = _engineDetectorManager.GetAllEngineProbabilities(process.MainModulePath);
+
                 var versionInfo = FileVersionInfo.GetVersionInfo(process.MainModulePath);
                 details.Publisher = versionInfo.CompanyName;
                 details.ProductName = versionInfo.ProductName;

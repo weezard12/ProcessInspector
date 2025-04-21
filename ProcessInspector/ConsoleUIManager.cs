@@ -9,74 +9,10 @@ namespace ProcessInspector
 {
     public class ConsoleUIManager : IUIManager
     {
-        public MenuOption ShowMainMenu()
-        {
-            Console.Clear();
-            AnsiConsole.Write(
-                new FigletText("Process Inspector")
-                    .LeftJustified()
-                    .Color(Color.Blue));
-
-            var option = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("📋 [blue]Main Menu[/]")
-                    .PageSize(10)
-                    .MoreChoicesText("[grey](Move up and down to reveal more options)[/]")
-                    .AddChoices(new[] {
-                        "1. Find and Inspect Process",
-                        "2. Inspect Running Processes List",
-                        "3. View Navigation History",
-                        "4. About",
-                        "5. Exit"
-                    }));
-
-            return option switch
-            {
-                "1. Find and Inspect Process" => MenuOption.FindAndInspectProcess,
-                "2. Inspect Running Processes List" => MenuOption.ListRunningProcesses,
-                "3. View Navigation History" => MenuOption.ViewNavigationHistory,
-                "4. About" => MenuOption.About,
-                "5. Exit" => MenuOption.Exit,
-                _ => MenuOption.Exit
-            };
-        }
-
         public string AskForProcessName()
         {
             Console.Clear();
             return AnsiConsole.Ask<string>("Enter the [green]name of the process[/] to inspect:");
-        }
-
-        public void ShowProcessNotFoundMessage()
-        {
-            AnsiConsole.MarkupLine("[red]❌ Process not found.[/]");
-            PressAnyKeyToContinue();
-        }
-
-        public void DisplayProcessList(IEnumerable<ProcessInfo> processes)
-        {
-            Console.Clear();
-            AnsiConsole.Status()
-                .Start("Loading processes...", ctx =>
-                {
-                    var table = new Table()
-                        .Title("[yellow]Running Processes[/]")
-                        .Border(TableBorder.Rounded)
-                        .AddColumn(new TableColumn("Process Name").Centered())
-                        .AddColumn(new TableColumn("PID").Centered())
-                        .AddColumn(new TableColumn("Memory (MB)").Centered());
-
-                    foreach (var process in processes)
-                    {
-                        table.AddRow(
-                            process.ProcessName,
-                            process.Id.ToString(),
-                            Math.Round(process.UnderlyingProcess.WorkingSet64 / 1024.0 / 1024.0, 2).ToString()
-                        );
-                    }
-
-                    AnsiConsole.Write(table);
-                });
         }
 
         public bool AskToInspectProcess()
@@ -89,49 +25,64 @@ namespace ProcessInspector
             return choice == "Yes";
         }
 
-        public ProcessDetailOption ShowProcessDetails(ProcessDetails details)
+        public void DisplayAboutInfo()
         {
             Console.Clear();
-            AnsiConsole.Write(new Rule($"[blue]Process Details: {details.Path}[/]").RuleStyle("blue").LeftJustified());
+            AnsiConsole.Write(new Rule("[blue]About Process Inspector[/]").RuleStyle("blue"));
 
-            var table = new Table().Border(TableBorder.Rounded);
-            table.AddColumn("Property").AddColumn("Value");
+            AnsiConsole.MarkupLine(@"
+[green]Process Inspector[/]
 
-            table.AddRow("[yellow]PID[/]", details.PID.ToString());
-            table.AddRow("[yellow]Path[/]", details.Path ?? "Unknown");
-            table.AddRow("[yellow]Publisher[/]", details.Publisher ?? "Unknown");
-            table.AddRow("[yellow]Product Name[/]", details.ProductName ?? "Unknown");
-            table.AddRow("[yellow]Version[/]", details.Version ?? "Unknown");
-            table.AddRow("[yellow]CPU Usage[/]", details.CpuUsage);
-            table.AddRow("[yellow]Memory Usage[/]", details.MemoryUsage);
-            table.AddRow("[yellow]Start Time[/]", details.StartTime);
-            table.AddRow("[yellow]Threads[/]", details.ThreadCount.ToString());
-            table.AddRow("[yellow]Detected Engine[/]", details.DetectedEngine);
+[yellow]Features:[/]
+- Interactive console UI with navigation
+- Process inspection and analysis
+- Programming language detection with percentages
+- Game and application engine detection
+- Process modules and threads viewing
+- CPU and memory usage monitoring
 
-            AnsiConsole.Write(table);
+");
 
-            var options = new List<string>
+            PressAnyKeyToContinue();
+        }
+
+        public void DisplayLanguageResults(LanguageDetectionResult results)
+        {
+            Console.Clear();
+            AnsiConsole.Write(new Rule("[yellow]Detected Programming Languages[/]").RuleStyle("yellow"));
+
+            if (results.Scores.Count > 0)
             {
-                "1. View Modules",
-                "2. Detect Programming Languages",
-                "3. View Process Threads",
-                "4. Back to Main Menu"
-            };
+                // Removed .Centered() as BarChart does not implement IAlignable
+                var chart = new BarChart()
+                    .Width(60)
+                    .Label("[green bold]Language Distribution[/]");
 
-            var option = AnsiConsole.Prompt(
-                new SelectionPrompt<string>()
-                    .Title("\n[blue]Choose an option:[/]")
-                    .PageSize(10)
-                    .AddChoices(options));
+                foreach (var score in results.Scores.OrderByDescending(s => s.Percentage))
+                {
+                    chart.AddItem(score.Language, score.Percentage, GetColorForLanguage(score.Language));
+                }
 
-            return option switch
+                AnsiConsole.Write(chart);
+
+                var table = new Table()
+                    .Border(TableBorder.Rounded)
+                    .AddColumn("Language")
+                    .AddColumn("Percentage");
+
+                foreach (var score in results.Scores.OrderByDescending(s => s.Percentage))
+                {
+                    table.AddRow(score.Language, $"{score.Percentage}%");
+                }
+
+                AnsiConsole.Write(table);
+            }
+            else
             {
-                "1. View Modules" => ProcessDetailOption.ViewModules,
-                "2. Detect Programming Languages" => ProcessDetailOption.DetectProgrammingLanguages,
-                "3. View Process Threads" => ProcessDetailOption.ViewThreads,
-                "4. Back to Main Menu" => ProcessDetailOption.BackToMainMenu,
-                _ => ProcessDetailOption.BackToMainMenu
-            };
+                AnsiConsole.MarkupLine("[yellow]No programming languages could be detected with confidence.[/]");
+            }
+
+            PressAnyKeyToContinue();
         }
 
         public void DisplayModules(IEnumerable<ModuleInfo> modules)
@@ -162,39 +113,51 @@ namespace ProcessInspector
             PressAnyKeyToContinue();
         }
 
-        public void DisplayLanguageResults(LanguageDetectionResult results)
+        public void DisplayNavigationHistory(IEnumerable<string> history)
         {
             Console.Clear();
-            AnsiConsole.Write(new Rule("[yellow]Detected Programming Languages[/]").RuleStyle("yellow"));
+            AnsiConsole.Write(new Rule("[blue]Navigation History[/]").RuleStyle("blue"));
 
-            var chart = new BarChart()
-                .Width(60)
-                .Label("[green bold]Language Distribution[/]")
-                .CenterLabel();
-
-            foreach (var score in results.Scores.OrderByDescending(s => s.Percentage))
+            var historyList = history.ToList();
+            if (historyList.Count == 0)
             {
-                chart.AddItem(score.Language, score.Percentage, GetColorForLanguage(score.Language));
+                AnsiConsole.MarkupLine("[yellow]No navigation history yet.[/]");
+            }
+            else
+            {
+                for (int i = 0; i < historyList.Count; i++)
+                {
+                    AnsiConsole.MarkupLine($"[grey]{i + 1}.[/] {historyList[i]}");
+                }
             }
 
-            AnsiConsole.Write(chart);
+            PressAnyKeyToContinue();
+        }
 
-            var table = new Table()
-                .Border(TableBorder.Rounded)
-                .AddColumn("Language")
-                .AddColumn("Percentage");
+        public void DisplayProcessList(IEnumerable<ProcessInfo> processes)
+        {
+            Console.Clear();
+            AnsiConsole.Status()
+                .Start("Loading processes...", ctx =>
+                {
+                    var table = new Table()
+                        .Title("[yellow]Running Processes[/]")
+                        .Border(TableBorder.Rounded)
+                        .AddColumn(new TableColumn("Process Name").Centered())
+                        .AddColumn(new TableColumn("PID").Centered())
+                        .AddColumn(new TableColumn("Memory (MB)").Centered());
 
-            foreach (var score in results.Scores.OrderByDescending(s => s.Percentage))
-            {
-                table.AddRow(score.Language, $"{score.Percentage}%");
-            }
+                    foreach (var process in processes)
+                    {
+                        table.AddRow(
+                            process.ProcessName,
+                            process.Id.ToString(),
+                            Math.Round(process.UnderlyingProcess.WorkingSet64 / 1024.0 / 1024.0, 2).ToString()
+                        );
+                    }
 
-            AnsiConsole.Write(table);
-
-            if (results.Scores.Count == 0)
-            {
-                AnsiConsole.MarkupLine("[yellow]No programming languages could be detected with confidence.[/]");
-            }
+                    AnsiConsole.Write(table);
+                });
 
             PressAnyKeyToContinue();
         }
@@ -224,52 +187,117 @@ namespace ProcessInspector
             PressAnyKeyToContinue();
         }
 
-        public void DisplayNavigationHistory(IEnumerable<string> history)
-        {
-            Console.Clear();
-            AnsiConsole.Write(new Rule("[blue]Navigation History[/]").RuleStyle("blue"));
-
-            var historyList = history.ToList();
-            if (historyList.Count == 0)
-            {
-                AnsiConsole.MarkupLine("[yellow]No navigation history yet.[/]");
-            }
-            else
-            {
-                for (int i = 0; i < historyList.Count; i++)
-                {
-                    AnsiConsole.MarkupLine($"[grey]{i + 1}.[/] {historyList[i]}");
-                }
-            }
-
-            PressAnyKeyToContinue();
-        }
-
-        public void DisplayAboutInfo()
-        {
-            Console.Clear();
-            AnsiConsole.Write(new Rule("[blue]About Process Inspector[/]").RuleStyle("blue"));
-
-            AnsiConsole.MarkupLine(@"
-[green]Process Inspector[/]
-
-[yellow]Features:[/]
-- Interactive console UI with navigation
-- Process inspection and analysis
-- Programming language detection with percentages
-- Game and application engine detection
-- Process modules and threads viewing
-- CPU and memory usage monitoring
-
-");
-
-            PressAnyKeyToContinue();
-        }
-
         public void ShowExitMessage()
         {
             Console.Clear();
             AnsiConsole.MarkupLine("[green]Thank you for using Process Inspector![/]");
+        }
+
+        public MenuOption ShowMainMenu()
+        {
+            Console.Clear();
+            AnsiConsole.Write(
+                new FigletText("Process Inspector")
+                    .Alignment(Justify.Left)
+                    .Color(Color.Blue));
+
+            var option = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("📋 [blue]Main Menu[/]")
+                    .PageSize(10)
+                    .MoreChoicesText("[grey](Move up and down to reveal more options)[/]")
+                    .AddChoices(new[] {
+                           "1. Find and Inspect Process",
+                           "2. Inspect Running Processes List",
+                           "3. View Navigation History",
+                           "4. About",
+                           "5. Exit"
+                    }));
+
+            return option switch
+            {
+                "1. Find and Inspect Process" => MenuOption.FindAndInspectProcess,
+                "2. Inspect Running Processes List" => MenuOption.ListRunningProcesses,
+                "3. View Navigation History" => MenuOption.ViewNavigationHistory,
+                "4. About" => MenuOption.About,
+                "5. Exit" => MenuOption.Exit,
+                _ => MenuOption.Exit
+            };
+        }
+
+        public ProcessDetailOption ShowProcessDetails(ProcessDetails details)
+        {
+            Console.Clear();
+            AnsiConsole.Write(new Rule($"[blue]Process Details: {details.Path}[/]").RuleStyle("blue"));
+
+            var table = new Table().Border(TableBorder.Rounded);
+            table.AddColumn("Property").AddColumn("Value");
+
+            table.AddRow("[yellow]PID[/]", details.PID.ToString());
+            table.AddRow("[yellow]Path[/]", details.Path ?? "Unknown");
+            table.AddRow("[yellow]Publisher[/]", details.Publisher ?? "Unknown");
+            table.AddRow("[yellow]Product Name[/]", details.ProductName ?? "Unknown");
+            table.AddRow("[yellow]Version[/]", details.Version ?? "Unknown");
+            table.AddRow("[yellow]CPU Usage[/]", details.CpuUsage);
+            table.AddRow("[yellow]Memory Usage[/]", details.MemoryUsage);
+            table.AddRow("[yellow]Start Time[/]", details.StartTime);
+            table.AddRow("[yellow]Threads[/]", details.ThreadCount.ToString());
+            table.AddRow("[yellow]Detected Engine[/]", details.DetectedEngine);
+
+            AnsiConsole.Write(table);
+
+            // Display engine probabilities if there are any
+            if (details.EngineProbabilities != null && details.EngineProbabilities.Any())
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.Write(new Rule("[blue]Engine Detection Probabilities[/]").RuleStyle("blue"));
+                
+                var engineTable = new Table().Border(TableBorder.Rounded);
+                engineTable.AddColumn("Engine").AddColumn("Probability");
+                
+                foreach (var engineProbability in details.EngineProbabilities.OrderByDescending(p => p.Value))
+                {
+                    string probabilityStr = $"{Math.Round(engineProbability.Value * 100, 1)}%";
+                    string colorCode = engineProbability.Value > 0.5 ? "green" : 
+                                       engineProbability.Value > 0.25 ? "yellow" : "red";
+                    
+                    engineTable.AddRow(
+                        engineProbability.Key,
+                        $"[{colorCode}]{probabilityStr}[/]"
+                    );
+                }
+                
+                AnsiConsole.Write(engineTable);
+            }
+
+            var options = new List<string>
+            {
+                "1. View Modules",
+                "2. Detect Programming Languages",
+                "3. View Process Threads",
+                "4. Back to Main Menu"
+            };
+
+            var option = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("\n[blue]Choose an option:[/]")
+                    .PageSize(10)
+                    .AddChoices(options));
+
+            return option switch
+            {
+                "1. View Modules" => ProcessDetailOption.ViewModules,
+                "2. Detect Programming Languages" => ProcessDetailOption.DetectProgrammingLanguages,
+                "3. View Process Threads" => ProcessDetailOption.ViewThreads,
+                "4. Back to Main Menu" => ProcessDetailOption.BackToMainMenu,
+                _ => ProcessDetailOption.BackToMainMenu
+            };
+        }
+
+        public void ShowProcessNotFoundMessage()
+        {
+            AnsiConsole.MarkupLine("[red]❌ Process not found.[/]");
+            PressAnyKeyToContinue();
         }
 
         private void PressAnyKeyToContinue()

@@ -2,6 +2,7 @@
 {
     public interface IEngineDetector
     {
-        string DetectEngine(string exePath);
+        double DetectEngineProbability(string exePath);
+        string GetEngineName();
     }
 }

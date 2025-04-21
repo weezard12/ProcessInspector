@@ -167,13 +167,7 @@ namespace ProcessInspector
                 ["Avalonia"] = 0,
                 ["Flutter"] = 0,
                 ["React Native"] = 0,
-                ["MFC"] = 0,
-
-                // Graphics APIs
-                ["OpenGL"] = 0,
-                ["Vulkan"] = 0,
-                ["DirectX"] = 0,
-                ["Metal"] = 0
+                ["MFC"] = 0
             };
         }
 
@@ -986,6 +980,12 @@ namespace ProcessInspector
 
             if (gameEngines.Contains(topEngine.Key))
             {
+                // Check for graphics API usage
+                string graphicsApi = DetectGraphicsApi();
+                if (!string.IsNullOrEmpty(graphicsApi))
+                {
+                    return $"{topEngine.Key} Game Engine (using {graphicsApi})";
+                }
                 return $"{topEngine.Key} Game Engine";
             }
 
@@ -998,22 +998,67 @@ namespace ProcessInspector
 
             if (uiFrameworks.Contains(topEngine.Key))
             {
+                // Check for graphics API usage
+                string graphicsApi = DetectGraphicsApi();
+                if (!string.IsNullOrEmpty(graphicsApi))
+                {
+                    return $"{topEngine.Key} UI Framework (using {graphicsApi})";
+                }
                 return $"{topEngine.Key} UI Framework";
-            }
-
-            // Check if it's primarily a graphics API
-            var graphicsApis = new HashSet<string>
-            {
-                "OpenGL", "Vulkan", "DirectX", "Metal"
-            };
-
-            if (graphicsApis.Contains(topEngine.Key))
-            {
-                return $"{topEngine.Key}-based Application";
             }
 
             // If we got here, it's something else with a high score
             return topEngine.Key;
+        }
+
+        private string DetectGraphicsApi()
+        {
+            try
+            {
+                var graphicsApiScores = new Dictionary<string, double>
+                {
+                    ["OpenGL"] = 0,
+                    ["Vulkan"] = 0,
+                    ["DirectX"] = 0,
+                    ["Metal"] = 0
+                };
+
+                // Check loaded modules for graphics API DLLs
+                foreach (ProcessModule module in Process.GetCurrentProcess().Modules)
+                {
+                    string moduleName = module.ModuleName.ToLower();
+                    
+                    if (moduleName.Contains("opengl32") || moduleName.Contains("glew") || moduleName.Contains("glfw"))
+                    {
+                        graphicsApiScores["OpenGL"] += 3.0;
+                    }
+                    else if (moduleName.Contains("vulkan") || moduleName.Contains("vk_layer"))
+                    {
+                        graphicsApiScores["Vulkan"] += 3.0;
+                    }
+                    else if (moduleName.Contains("d3d11") || moduleName.Contains("dxgi") || moduleName.Contains("d3dx"))
+                    {
+                        graphicsApiScores["DirectX"] += 3.0;
+                    }
+                    else if (moduleName.Contains("metal"))
+                    {
+                        graphicsApiScores["Metal"] += 3.0;
+                    }
+                }
+
+                // Get the highest scoring graphics API
+                var topGraphicsApi = graphicsApiScores.OrderByDescending(pair => pair.Value).FirstOrDefault();
+                if (topGraphicsApi.Value >= 3.0) // Minimum threshold for graphics API detection
+                {
+                    return topGraphicsApi.Key;
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private string DetectUIFramework(string exePath, string folder)
@@ -1108,6 +1153,16 @@ namespace ProcessInspector
             {
                 return null;
             }
+        }
+
+        public double DetectEngineProbability(string exePath)
+        {
+            throw new NotImplementedException();
+        }
+
+        public string GetEngineName()
+        {
+            throw new NotImplementedException();
         }
     }
 }

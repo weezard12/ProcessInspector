@@ -18,5 +18,6 @@ namespace ProcessInspector.Types
         public string StartTime { get; set; }
         public int ThreadCount { get; set; }
         public string DetectedEngine { get; set; }
+        public Dictionary<string, double> EngineProbabilities { get; set; } = new Dictionary<string, double>();
     }
 }

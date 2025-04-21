@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ProcessInspector.EngineDetectors;
+using System;
 
 namespace ProcessInspector
 {
@@ -9,7 +10,7 @@ namespace ProcessInspector
             // Set up dependency injection
             IUIManager uiManager = new ConsoleUIManager();
             IHistoryManager historyManager = new NavigationHistoryManager();
-            IEngineDetector engineDetector = new EngineDetector();
+            IEngineDetector engineDetector = new EngineDetectorManager();
             ILanguageDetector languageDetector = new LanguageDetector();
             IProcessAnalyzer processAnalyzer = new ProcessAnalyzer(engineDetector, languageDetector);
 
