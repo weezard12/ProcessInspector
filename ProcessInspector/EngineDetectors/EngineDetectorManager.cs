@@ -24,7 +24,12 @@ namespace ProcessInspector.EngineDetectors
                 new LibGDXDetector(),
                 
                 // Application Frameworks
-                new ElectronDetector()
+                new ElectronDetector(),
+                new WPFDetector(),         // Windows Presentation Foundation
+                
+                // .NET Frameworks and Platforms
+                new DotNetConsoleDetector(),     // For detecting .NET Framework Console Applications
+                new DotNetCoreConsoleDetector()  // For detecting .NET Core/5+ Console Applications
                 
                 // Add other engine detectors here as they are implemented
             };
