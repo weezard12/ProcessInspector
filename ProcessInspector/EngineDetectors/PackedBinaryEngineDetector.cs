@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using ProcessInspector.BinaryAnalysis;
 
 namespace ProcessInspector.EngineDetectors
@@ -90,21 +92,34 @@ namespace ProcessInspector.EngineDetectors
                     // Start with the base confidence from the packer detection
                     score = confidence * 10.0; // Scale up to match our score system
 
-                    // Check for any additional evidence in the binary
-                    score += PerformSecondaryAnalysis(exePath, packerName);
+                    // Run secondary analysis tasks in parallel
+                    var analysisResults = new ConcurrentBag<double>();
+                    Parallel.Invoke(
+                        // Task 1: Perform secondary binary analysis
+                        () => {
+                            double secondaryScore = PerformSecondaryAnalysis(exePath, packerName);
+                            analysisResults.Add(secondaryScore);
+                        },
+                        // Task 2: Analyze environment (directory structure, related files)
+                        () => {
+                            double envScore = AnalyzeEnvironment(exePath, packerName);
+                            analysisResults.Add(envScore);
+                        },
+                        // Task 3: Check for structural indicators if needed
+                        () => {
+                            if (confidence < 0.5) // Only run this if confidence is lower
+                            {
+                                bool hasIndicators = HasPackerStructuralIndicators(exePath);
+                                if (hasIndicators)
+                                {
+                                    analysisResults.Add(2.0);
+                                }
+                            }
+                        }
+                    );
 
-                    // Check for any patterns in file/directory structure
-                    score += AnalyzeEnvironment(exePath, packerName);
-                }
-
-                // For binaries with identified packer but lower confidence, 
-                // perform additional checks to confirm
-                if (score > 0 && score < MIN_ENGINE_SCORE)
-                {
-                    if (HasPackerStructuralIndicators(exePath))
-                    {
-                        score += 2.0;
-                    }
+                    // Add all analysis results to the score
+                    score += analysisResults.Sum();
                 }
 
                 return Math.Min(score / 10.0, 1.0); // Normalize to 0.0-1.0
@@ -135,40 +150,52 @@ namespace ProcessInspector.EngineDetectors
                 // Convert to string for pattern matching
                 string fileContent = System.Text.Encoding.ASCII.GetString(fileBytes);
 
-                // Look for additional packer signatures
-                foreach (var pattern in AdditionalPackerPatterns)
+                // Parallel pattern matching for better performance
+                var patternScores = new ConcurrentBag<double>();
+                Parallel.ForEach(AdditionalPackerPatterns, new ParallelOptions { MaxDegreeOfParallelism = OptimalParallelism }, patternEntry =>
                 {
-                    if (pattern.Value.IsMatch(fileContent))
+                    string packerKey = patternEntry.Key;
+                    Regex pattern = patternEntry.Value;
+                    
+                    if (pattern.IsMatch(fileContent))
                     {
+                        double matchScore = 0.0;
                         // Higher score if this matches our initially detected packer
-                        if (string.Equals(pattern.Key, detectedPackerName, StringComparison.OrdinalIgnoreCase))
+                        if (string.Equals(packerKey, detectedPackerName, StringComparison.OrdinalIgnoreCase))
                         {
-                            additionalScore += 3.0; // Confirming evidence
+                            matchScore = 3.0; // Confirming evidence
                         }
                         else
                         {
-                            additionalScore += 1.5; // Additional packer evidence
+                            matchScore = 1.5; // Additional packer evidence
                         }
+                        patternScores.Add(matchScore);
                     }
-                }
+                });
+                
+                // Add all pattern match scores
+                additionalScore += patternScores.Sum();
 
                 // Check for specific string patterns related to the detected packer
                 if (!string.IsNullOrEmpty(detectedPackerName) && 
                     SecondaryCharacteristics.TryGetValue(detectedPackerName, out var characteristics))
                 {
-                    foreach (var characteristic in characteristics)
+                    var characteristicMatches = new ConcurrentBag<bool>();
+                    Parallel.ForEach(characteristics, characteristic =>
                     {
                         if (fileContent.Contains(characteristic, StringComparison.OrdinalIgnoreCase))
                         {
-                            additionalScore += 1.0;
+                            characteristicMatches.Add(true);
                         }
-                    }
-                }
+                    });
+                    
+                    additionalScore += characteristicMatches.Count;
 
-                // Bonus for multiple matching characteristics
-                if (additionalScore >= 3.0)
-                {
-                    additionalScore += 1.0; // Bonus for strong evidence
+                    // Bonus for multiple matching characteristics
+                    if (characteristicMatches.Count >= 3)
+                    {
+                        additionalScore += 1.0; // Bonus for strong evidence
+                    }
                 }
             }
             catch

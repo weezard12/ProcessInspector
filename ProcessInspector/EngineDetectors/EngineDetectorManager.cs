@@ -81,17 +81,18 @@ namespace ProcessInspector.EngineDetectors
 
         public Dictionary<string, double> GetAllEngineProbabilities(string exePath)
         {
-            var results = new ConcurrentDictionary<string, double>();
+            // Use ConcurrentDictionary for thread-safe operations
+            var resultsDictionary = new ConcurrentDictionary<string, double>();
 
-            // Run all detectors in parallel
-            Parallel.ForEach(_engineDetectors, detector =>
+            // Execute all detectors in parallel
+            Parallel.ForEach(_engineDetectors, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, detector =>
             {
                 try
                 {
                     double probability = detector.DetectEngineProbability(exePath);
                     if (probability > 0)
                     {
-                        results[detector.GetEngineName()] = probability;
+                        resultsDictionary.TryAdd(detector.GetEngineName(), probability);
                     }
                 }
                 catch
@@ -100,8 +101,8 @@ namespace ProcessInspector.EngineDetectors
                 }
             });
 
-            // Convert to a regular Dictionary for consistency with the return type
-            return new Dictionary<string, double>(results);
+            // Convert to regular Dictionary for API compatibility
+            return new Dictionary<string, double>(resultsDictionary);
         }
     }
 } 
