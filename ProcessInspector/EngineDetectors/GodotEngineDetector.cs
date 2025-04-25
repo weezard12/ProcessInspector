@@ -44,6 +44,18 @@ namespace ProcessInspector.EngineDetectors
                 double score = 0.0;
                 string folder = Path.GetDirectoryName(exePath);
 
+                // First check if this might be a packed binary or .NET application
+                if (IsPotentiallyPackedDotNetApp(exePath))
+                {
+                    // Apply stricter detection criteria for packed apps
+                    if (!HasDefinitiveGodotEvidence(folder))
+                    {
+                        // Lower the base score for potentially packed apps
+                        // unless we have definitive Godot evidence
+                        return 0.0;
+                    }
+                }
+
                 // Hash-based detection (strongest evidence)
                 score += DetectByHash(exePath, folder);
                 
@@ -59,6 +71,10 @@ namespace ProcessInspector.EngineDetectors
 
                 // Content-based detection
                 score += ScanForGodotSignatures(folder);
+                
+                // Check for evidence that contradicts Godot detection
+                double conflictScore = CheckForConflictingEvidence(exePath, folder);
+                score = Math.Max(0, score - conflictScore);
 
                 // Normalize score as a probability between 0.0 and 1.0
                 return Math.Min(score / 10.0, 1.0);
@@ -232,6 +248,198 @@ namespace ProcessInspector.EngineDetectors
             }
 
             return Math.Min(score, 3.0); // Cap at 3.0
+        }
+
+        /// <summary>
+        /// Checks if the executable appears to be a packed or obfuscated .NET application
+        /// </summary>
+        private bool IsPotentiallyPackedDotNetApp(string exePath)
+        {
+            try
+            {
+                var fileInfo = new FileInfo(exePath);
+                
+                // Check file size - self-contained .NET apps or packed apps are typically larger
+                bool isSuspiciousSize = fileInfo.Length > 5 * 1024 * 1024; // > 5MB is suspicious
+                
+                // Look for .NET metadata in the file
+                using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read))
+                {
+                    byte[] buffer = new byte[Math.Min(4096, fs.Length)];
+                    fs.Read(buffer, 0, buffer.Length);
+                    
+                    // Convert to string to look for .NET indicators
+                    string headerContent = System.Text.Encoding.ASCII.GetString(buffer);
+                    
+                    // Check for .NET metadata indicators
+                    bool hasDotNetIndicators = headerContent.Contains("mscoree") || 
+                                              headerContent.Contains("System.Runtime") ||
+                                              headerContent.Contains("mscorlib");
+                    
+                    // Look for packer signatures in the header
+                    bool hasPackerSignatures = headerContent.Contains("UPX") ||
+                                              headerContent.Contains("Enigma") ||
+                                              headerContent.Contains("Obfuscated") ||
+                                              headerContent.Contains("Protected") ||
+                                              headerContent.Contains("packed");
+                    
+                    return (isSuspiciousSize && hasDotNetIndicators) || hasPackerSignatures;
+                }
+            }
+            catch
+            {
+                // If we can't analyze, assume it's not a packed .NET app
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Checks for definitive Godot evidence - used to validate when we suspect a packed binary
+        /// </summary>
+        private bool HasDefinitiveGodotEvidence(string folder)
+        {
+            try
+            {
+                // These are 100% Godot-specific files that wouldn't exist in non-Godot projects
+                string[] definitiveFiles = {
+                    "project.godot",
+                    "engine.cfg",
+                    // Godot 4.x specific file
+                    ".godot/editor/project_metadata.cfg"
+                };
+                
+                foreach (var file in definitiveFiles)
+                {
+                    if (File.Exists(Path.Combine(folder, file)))
+                    {
+                        return true;
+                    }
+                }
+                
+                // Check for PCK files which are Godot-specific resource packs
+                if (Directory.GetFiles(folder, "*.pck").Length > 0)
+                {
+                    return true;
+                }
+                
+                // Check for scene files which are Godot-specific
+                if (Directory.GetFiles(folder, "*.tscn", SearchOption.AllDirectories).Length > 0)
+                {
+                    return true;
+                }
+                
+                // Check for GDScript files which are Godot-specific
+                if (Directory.GetFiles(folder, "*.gd", SearchOption.AllDirectories).Length > 0)
+                {
+                    return true;
+                }
+                
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Checks for evidence that contradicts a Godot engine identification
+        /// </summary>
+        private double CheckForConflictingEvidence(string exePath, string folder)
+        {
+            double conflictScore = 0.0;
+            
+            try
+            {
+                // Check for .NET-specific files that would indicate a console app rather than Godot
+                string[] dotNetFiles = {
+                    "*.runtimeconfig.json",    // .NET Core/5+ config
+                    "*.deps.json",             // .NET dependencies
+                    "appsettings.json",        // ASP.NET or console app settings
+                    "App.config",              // .NET Framework config
+                    "packages.config"          // NuGet packages
+                };
+                
+                foreach (var pattern in dotNetFiles)
+                {
+                    int fileCount = Directory.GetFiles(folder, pattern, SearchOption.TopDirectoryOnly).Length;
+                    if (fileCount > 0)
+                    {
+                        conflictScore += fileCount * 1.0; // Each file adds to conflict score
+                    }
+                }
+                
+                // Check for typical .NET libraries that aren't used in Godot
+                string[] nonGodotLibraries = {
+                    "System.Console.dll",
+                    "CommandLine.dll",          // Common console app library
+                    "Microsoft.Extensions.Configuration.dll",
+                    "Microsoft.Extensions.Hosting.dll",
+                    "Newtonsoft.Json.dll"       // Very common in .NET apps but rarely in Godot
+                };
+                
+                foreach (var lib in nonGodotLibraries)
+                {
+                    if (Directory.GetFiles(folder, lib, SearchOption.AllDirectories).Length > 0)
+                    {
+                        conflictScore += 1.0;
+                    }
+                }
+                
+                // Look for Windows Forms or WPF libraries which conflict with Godot
+                string[] guiLibraries = {
+                    "System.Windows.Forms.dll", 
+                    "PresentationCore.dll",
+                    "PresentationFramework.dll"
+                };
+                
+                foreach (var lib in guiLibraries)
+                {
+                    if (Directory.GetFiles(folder, lib, SearchOption.AllDirectories).Length > 0)
+                    {
+                        conflictScore += 2.0; // Stronger evidence against Godot
+                    }
+                }
+                
+                // Check for csproj files with no Godot references
+                var csprojFiles = Directory.GetFiles(folder, "*.csproj", SearchOption.AllDirectories);
+                foreach (var csprojFile in csprojFiles)
+                {
+                    string content = File.ReadAllText(csprojFile);
+                    if (!content.Contains("Godot") && !content.Contains("godot"))
+                    {
+                        // Project file with no Godot references is strong evidence against
+                        conflictScore += 2.0;
+                    }
+                }
+                
+                // Check for common command-line argument patterns in binary
+                using (var fs = new FileStream(exePath, FileMode.Open, FileAccess.Read))
+                {
+                    byte[] buffer = new byte[Math.Min(1024 * 1024, fs.Length)];
+                    fs.Read(buffer, 0, buffer.Length);
+                    string content = System.Text.Encoding.ASCII.GetString(buffer);
+                    
+                    // Common console app patterns
+                    if (content.Contains("--help") && content.Contains("-h") && 
+                        content.Contains("--version") && content.Contains("-v"))
+                    {
+                        conflictScore += 1.5; // CLI argument pattern
+                    }
+                    
+                    // Check for Console.WriteLine/ReadLine which are very unlikely in Godot games
+                    if (content.Contains("Console.WriteLine") || content.Contains("Console.ReadLine"))
+                    {
+                        conflictScore += 2.0;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore errors
+            }
+            
+            return Math.Min(conflictScore, 10.0); // Cap the conflict score at 10.0
         }
     }
 } 

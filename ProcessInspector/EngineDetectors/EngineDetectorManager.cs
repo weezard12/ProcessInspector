@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace ProcessInspector.EngineDetectors
 {
@@ -29,7 +31,10 @@ namespace ProcessInspector.EngineDetectors
                 
                 // .NET Frameworks and Platforms
                 new DotNetConsoleDetector(),     // For detecting .NET Framework Console Applications
-                new DotNetCoreConsoleDetector()  // For detecting .NET Core/5+ Console Applications
+                new DotNetCoreConsoleDetector(),  // For detecting .NET Core/5+ Console Applications
+                
+                // Packer Detection
+                new PackedBinaryEngineDetector()  // For detecting packed/protected executables
                 
                 // Add other engine detectors here as they are implemented
             };
@@ -76,9 +81,10 @@ namespace ProcessInspector.EngineDetectors
 
         public Dictionary<string, double> GetAllEngineProbabilities(string exePath)
         {
-            var results = new Dictionary<string, double>();
+            var results = new ConcurrentDictionary<string, double>();
 
-            foreach (var detector in _engineDetectors)
+            // Run all detectors in parallel
+            Parallel.ForEach(_engineDetectors, detector =>
             {
                 try
                 {
@@ -92,9 +98,10 @@ namespace ProcessInspector.EngineDetectors
                 {
                     // Ignore errors in individual detectors
                 }
-            }
+            });
 
-            return results;
+            // Convert to a regular Dictionary for consistency with the return type
+            return new Dictionary<string, double>(results);
         }
     }
 } 
